@@ -257,7 +257,9 @@
     loading = Util.toBlobURL(BASE + "/ffmpeg-core.js", "text/javascript")
       .then(function (coreURL) {
         return Util.toBlobURL(BASE + "/ffmpeg-core.wasm", "application/wasm").then(function (wasmURL) {
-          return ffmpeg.load({ coreURL: coreURL, wasmURL: wasmURL });
+          return Util.toBlobURL("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js", "text/javascript").then(function (workerURL) {
+            return ffmpeg.load({ coreURL: coreURL, wasmURL: wasmURL, workerURL: workerURL });
+          });
         });
       })
       .then(function () { return ffmpeg; })
