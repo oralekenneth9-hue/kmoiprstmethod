@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Smaller: video compression on your device</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --bench: #e9eef0;
+    --panel: #f7f9fa;
+    --ink: #14191d;
+    --muted: #5a6670;
+    --rule: #cdd6db;
+    --signal: #0f6b66;
+    --signal-ink: #ffffff;
+    --warn: #9a4a06;
+    --bar-before: #aab6bd;
+    --bar-after: #0f6b66;
+    --focus: #0f6b66;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bench: #0f1417;
+      --panel: #161d21;
+      --ink: #e7edf0;
+      --muted: #97a4ac;
+      --rule: #2b353b;
+      --signal: #4fb8b1;
+      --signal-ink: #0b1215;
+      --warn: #f0a25a;
+      --bar-before: #4a565d;
+      --bar-after: #4fb8b1;
+      --focus: #4fb8b1;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bench: #0f1417; --panel: #161d21; --ink: #e7edf0; --muted: #97a4ac;
+    --rule: #2b353b; --signal: #4fb8b1; --signal-ink: #0b1215; --warn: #f0a25a;
+    --bar-before: #4a565d; --bar-after: #4fb8b1; --focus: #4fb8b1;
+  }
+
+  :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bench); color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+
+  h1 { font-size: 2rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 0.5rem; }
+  .lede { color: var(--muted); margin: 0 0 2.5rem; max-width: 34rem; }
+
+  .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 1.5rem; }
+  .panel + .panel { margin-top: 1rem; }
+
+  .drop {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem;
+    border: 1px dashed var(--rule); border-radius: 4px; padding: 1.5rem;
+    background: transparent; transition: border-color 150ms ease, background 150ms ease;
+  }
+  .drop.over { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 8%, transparent); }
+  .drop p { margin: 0; color: var(--muted); }
+  .drop strong { font-weight: 500; color: var(--ink); }
+
+  button, .button {
+    font: inherit; font-weight: 500; font-size: 0.95rem; cursor: pointer;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--panel);
+    padding: 0.6rem 1.1rem; border-radius: 3px; text-decoration: none; display: inline-block;
+  }
+  button.ghost { background: transparent; color: var(--ink); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+  button:focus-visible, .button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+
+  .file { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+  .file-name { font-weight: 500; overflow-wrap: anywhere; }
+  .file-size { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  fieldset { border: 0; margin: 0; padding: 0; }
+  legend { font-weight: 500; margin-bottom: 0.6rem; padding: 0; }
+  .options { display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
+  @media (min-width: 560px) { .options { grid-template-columns: repeat(3, 1fr); } }
+  .option { position: relative; }
+  .option input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .option span {
+    display: block; border: 1px solid var(--rule); border-radius: 3px; padding: 0.75rem 0.9rem;
+    background: var(--bench); height: 100%;
+  }
+  .option b { display: block; font-weight: 500; }
+  .option small { color: var(--muted); font-size: 0.85rem; }
+  .option input:checked + span { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+  .option input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .row { margin-top: 1.25rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+  select {
+    font: inherit; background: var(--bench); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 0.55rem 0.7rem;
+  }
+  .hint { color: var(--muted); font-size: 0.88rem; margin: 0.6rem 0 0; }
+  .warn { color: var(--warn); }
+
+  .progress { margin-top: 1.25rem; }
+  .track { height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+  .fill { height: 100%; width: 0%; background: var(--signal); transition: width 200ms linear; }
+  .status { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+  .result h2 { font-size: 1rem; font-weight: 500; margin: 0 0 1rem; }
+  .bars { display: grid; gap: 0.6rem; }
+  .bar-row { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.75rem; align-items: center; font-variant-numeric: tabular-nums; }
+  .bar-row .label { color: var(--muted); font-size: 0.9rem; }
+  .bar { height: 22px; border-radius: 2px; background: var(--bar-before); min-width: 2px; position: relative; }
+  .bar.after { background: var(--bar-after); }
+  .bar-row .value { position: absolute; }
+  .bar-cell { position: relative; display: flex; align-items: center; gap: 0.6rem; }
+  .bar-cell span { white-space: nowrap; font-size: 0.9rem; }
+  .saved { font-size: 2.25rem; font-weight: 600; letter-spacing: -0.02em; margin: 1.25rem 0 0.25rem; font-variant-numeric: tabular-nums; }
+  .saved-label { color: var(--muted); margin: 0; font-size: 0.9rem; }
+  .result .row { margin-top: 1.25rem; }
+
+  .error { color: var(--warn); margin: 1rem 0 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  [hidden] { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Smaller</h1>
+  <p class="lede">Compress video in your browser. Your file never leaves this device, and the detail stays where it matters.</p>
+
+  <section class="panel" aria-labelledby="pick-title">
+    <h2 id="pick-title" class="sr-only">Choose a video</h2>
+    <label class="drop" id="drop" for="file">
+      <strong>Drop a video here, or choose one</strong>
+      <p>MP4, MOV, or WebM. Large files can take a few minutes and need enough memory.</p>
+      <span class="button" style="pointer-events:none">Choose file</span>
+    </label>
+    <input id="file" type="file" accept="video/*" class="sr-only" />
+
+    <div class="file" id="fileInfo" hidden>
+      <span class="file-name" id="fileName"></span>
+      <span class="file-size" id="fileSize"></span>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="settings-title" id="settings" hidden>
+    <h2 id="settings-title" class="sr-only">Settings</h2>
+    <fieldset>
+      <legend>How much detail to keep</legend>
+      <div class="options">
+        <label class="option"><input type="radio" name="quality" value="18" />
+          <span><b>Keep detail</b><small>Closest to the original</small></span></label>
+        <label class="option"><input type="radio" name="quality" value="23" checked />
+          <span><b>Balanced</b><small>Smaller, rarely visible</small></span></label>
+        <label class="option"><input type="radio" name="quality" value="28" />
+          <span><b>Smallest</b><small>For sharing quickly</small></span></label>
+      </div>
+    </fieldset>
+
+    <div class="row">
+      <label for="res">Resolution</label>
+      <select id="res">
+        <option value="0">Keep original</option>
+        <option value="1080">1080p</option>
+        <option value="720" selected>720p</option>
+        <option value="480">480p</option>
+      </select>
+    </div>
+    <p class="hint" id="memHint"></p>
+
+    <div class="row">
+      <button id="go" class="primary" type="button">Compress</button>
+      <button id="reset" class="ghost" type="button">Start over</button>
+    </div>
+
+    <div class="progress" id="progress" hidden>
+      <div class="track" role="progressbar" aria-label="Compression progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="track">
+        <div class="fill" id="fill"></div>
+      </div>
+      <p class="status" id="status" aria-live="polite"></p>
+    </div>
+    <p class="error" id="error" role="alert" hidden></p>
+  </section>
+
+  <section class="panel result" id="result" hidden aria-labelledby="result-title">
+    <h2 id="result-title">Result</h2>
+    <div class="bars" aria-hidden="true">
+      <div class="bar-row"><span class="label">Original</span>
+        <div class="bar-cell"><div class="bar" id="barBefore"></div><span id="valBefore"></span></div></div>
+      <div class="bar-row"><span class="label">Compressed</span>
+        <div class="bar-cell"><div class="bar after" id="barAfter"></div><span id="valAfter"></span></div></div>
+    </div>
+    <p class="saved" id="saved"></p>
+    <p class="saved-label" id="savedLabel"></p>
+    <div class="row">
+      <a id="download" class="button" href="#" download="smaller.mp4">Download</a>
+      <button id="again" class="ghost" type="button">Compress another</button>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
+  var $ = function (id) { return document.getElementById(id); };
+  var els = {
+    drop: $("drop"), file: $("file"), fileInfo: $("fileInfo"), fileName: $("fileName"),
+    fileSize: $("fileSize"), settings: $("settings"), res: $("res"), go: $("go"),
+    reset: $("reset"), progress: $("progress"), fill: $("fill"), track: $("track"),
+    status: $("status"), error: $("error"), result: $("result"), memHint: $("memHint"),
+    barBefore: $("barBefore"), barAfter: $("barAfter"), valBefore: $("valBefore"),
+    valAfter: $("valAfter"), saved: $("saved"), savedLabel: $("savedLabel"),
+    download: $("download"), again: $("again")
+  };
+
+  var ffmpeg = null, loading = null, selected = null, outputUrl = null;
+
+  function fmt(bytes) {
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + " GB";
+    if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + " MB";
+    if (bytes >= 1e3) return Math.round(bytes / 1e3) + " KB";
+    return bytes + " B";
+  }
+
+  function showError(msg) { els.error.textContent = msg; els.error.hidden = false; }
+  function clearError() { els.error.textContent = ""; els.error.hidden = true; }
+
+  function loadEngine() {
+    if (ffmpeg && ffmpeg.loaded) return Promise.resolve(ffmpeg);
+    if (loading) return loading;
+    var FF = window.FFmpegWASM && window.FFmpegWASM.FFmpeg;
+    var Util = window.FFmpegUtil;
+    if (!FF || !Util) return Promise.reject(new Error("The compression engine did not load. Check your connection and reload."));
+    ffmpeg = new FF();
+    ffmpeg.on("progress", function (e) {
+      var pct = Math.max(0, Math.min(100, Math.round(e.progress * 100)));
+      els.fill.style.width = pct + "%";
+      els.track.setAttribute("aria-valuenow", String(pct));
+      if (pct > 0) els.status.textContent = "Compressing: " + pct + "%";
+    });
+    loading = Util.toBlobURL(BASE + "/ffmpeg-core.js", "text/javascript")
+      .then(function (coreURL) {
+        return Util.toBlobURL(BASE + "/ffmpeg-core.wasm", "application/wasm").then(function (wasmURL) {
+          return ffmpeg.load({ coreURL: coreURL, wasmURL: wasmURL });
+        });
+      })
+      .then(function () { return ffmpeg; })
+      .catch(function (err) { loading = null; throw err; });
+    return loading;
+  }
+
+  function chooseFile(f) {
+    if (!f) return;
+    if (!/^video\//.test(f.type) && !/\.(mp4|mov|webm|mkv)$/i.test(f.name)) {
+      showError("That file doesn't look like a video. Try an MP4, MOV, or WebM.");
+      return;
+    }
+    clearError();
+    selected = f;
+    els.fileName.textContent = f.name;
+    els.fileSize.textContent = fmt(f.size);
+    els.fileInfo.hidden = false;
+    els.settings.hidden = false;
+    els.result.hidden = true;
+    els.progress.hidden = true;
+    els.memHint.textContent = f.size > 1e9
+      ? "Files this large may run out of memory in a browser. A smaller resolution helps."
+      : "";
+    els.memHint.className = "hint" + (f.size > 1e9 ? " warn" : "");
+  }
+
+  els.file.addEventListener("change", function () { chooseFile(els.file.files[0]); });
+
+  ["dragenter", "dragover"].forEach(function (t) {
+    els.drop.addEventListener(t, function (e) { e.preventDefault(); els.drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (t) {
+    els.drop.addEventListener(t, function (e) { e.preventDefault(); els.drop.classList.remove("over"); });
+  });
+  els.drop.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    chooseFile(f);
+  });
+
+  function quality() {
+    var r = document.querySelector('input[name="quality"]:checked');
+    return r ? r.value : "23";
+  }
+
+  els.go.addEventListener("click", function () {
+    if (!selected) return;
+    clearError();
+    els.go.disabled = true;
+    els.result.hidden = true;
+    els.progress.hidden = false;
+    els.fill.style.width = "0%";
+    els.status.textContent = "Loading the engine (one time, about 30 MB)…";
+
+    var crf = quality();
+    var height = parseInt(els.res.value, 10);
+    var inName = "input" + (selected.name.match(/\.[a-z0-9]+$/i) || [".mp4"])[0].toLowerCase();
+    var args = ["-i", inName, "-c:v", "libx264", "-crf", crf, "-preset", "veryfast", "-pix_fmt", "yuv420p"];
+    if (height) args.push("-vf", "scale=-2:" + height + ":force_original_aspect_ratio=decrease");
+    args.push("-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "output.mp4");
+
+    loadEngine()
+      .then(function (ff) {
+        els.status.textContent = "Preparing your file…";
+        return window.FFmpegUtil.fetchFile(selected)
+          .then(function (data) { return ff.writeFile(inName, data); })
+          .then(function () { els.status.textContent = "Compressing…"; return ff.exec(args); })
+          .then(function (code) {
+            if (code !== 0) throw new Error("The encoder stopped before it finished (code " + code + ").");
+            return ff.readFile("output.mp4");
+          })
+          .then(function (out) {
+            return Promise.all([ff.deleteFile(inName).catch(function () {}), ff.deleteFile("output.mp4").catch(function () {})])
+              .then(function () { return out; });
+          });
+      })
+      .then(function (out) {
+        var blob = new Blob([out.buffer ? out.buffer : out], { type: "video/mp4" });
+        showResult(blob);
+      })
+      .catch(function (err) {
+        showError(err && err.message ? err.message : "Something went wrong while compressing.");
+        els.progress.hidden = true;
+      })
+      .then(function () { els.go.disabled = false; });
+  });
+
+  function showResult(blob) {
+    if (outputUrl) URL.revokeObjectURL(outputUrl);
+    outputUrl = URL.createObjectURL(blob);
+    var before = selected.size, after = blob.size;
+    var max = Math.max(before, after);
+    els.barBefore.style.width = (before / max * 100) + "%";
+    els.barAfter.style.width = (after / max * 100) + "%";
+    els.valBefore.textContent = fmt(before);
+    els.valAfter.textContent = fmt(after);
+    var pct = before > 0 ? Math.round((1 - after / before) * 100) : 0;
+    if (pct >= 0) {
+      els.saved.textContent = fmt(before - after) + " saved";
+      els.savedLabel.textContent = pct + "% smaller than the original";
+    } else {
+      els.saved.textContent = fmt(after - before) + " larger";
+      els.savedLabel.textContent = "Try a higher compression setting for this file";
+    }
+    var base = selected.name.replace(/\.[^.]+$/, "");
+    els.download.href = outputUrl;
+    els.download.setAttribute("download", base + "-smaller.mp4");
+    els.progress.hidden = true;
+    els.status.textContent = "";
+    els.result.hidden = false;
+  }
+
+  function reset() {
+    selected = null;
+    els.file.value = "";
+    els.fileInfo.hidden = true;
+    els.settings.hidden = true;
+    els.result.hidden = true;
+    els.progress.hidden = true;
+    clearError();
+    if (outputUrl) { URL.revokeObjectURL(outputUrl); outputUrl = null; }
+  }
+
+  els.reset.addEventListener("click", reset);
+  els.again.addEventListener("click", function () { els.result.hidden = true; els.progress.hidden = true; clearError(); });
+})();
+</script>
+</body>
+</html>
