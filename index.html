@@ -217,7 +217,7 @@
 (function () {
   "use strict";
 
-  var BASE = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
+  var BASE = "./ffmpeg";
   var $ = function (id) { return document.getElementById(id); };
   var els = {
     drop: $("drop"), file: $("file"), fileInfo: $("fileInfo"), fileName: $("fileName"),
@@ -257,7 +257,7 @@
     loading = Util.toBlobURL(BASE + "/ffmpeg-core.js", "text/javascript")
       .then(function (coreURL) {
         return Util.toBlobURL(BASE + "/ffmpeg-core.wasm", "application/wasm").then(function (wasmURL) {
-          return Util.toBlobURL("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js", "text/javascript").then(function (workerURL) {
+          return Util.toBlobURL("./ffmpeg/814.ffmpeg.js", "text/javascript").then(function (workerURL) {
             return ffmpeg.load({ coreURL: coreURL, wasmURL: wasmURL, workerURL: workerURL });
           });
         });
